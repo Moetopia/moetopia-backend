@@ -1,0 +1,6 @@
+# 脚本专用依赖（不需要安装到生产环境）
+# 安装：.venv\Scripts\pip install -r requirements-scripts.txt
+
+pixivpy3>=3.7.5
+requests>=2.31.0
+tqdm>=4.66.0

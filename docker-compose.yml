@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # 1. 关系型数据库：存储元数据
+  postgres:
+    image: postgres:18
+    container_name: sakurakoi_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: sakurakoi
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker-data/postgres:/var/lib/postgresql
+    restart: always
+
+  # 2. 文本搜素引擎：处理标签和标题搜索
+  meilisearch:
+    image: getmeili/meilisearch:v1.42.1
+    container_name: sakurakoi_meili
+    environment:
+      - MEILI_MASTER_KEY=masterKey_123456
+    ports:
+      - "7700:7700"
+    volumes:
+      - ./docker-data/meili:/meili_data
+    restart: always
+
+  # 3. 向量数据库：处理 9083 维特征
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: sakurakoi_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./docker-data/qdrant:/qdrant/storage
+    restart: always
+
+  # 4. Redis：任务队列中间件，用于数据库同步
+  redis:
+    image: redis:7-alpine
+    container_name: sakurakoi_redis
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: bitnami/minio:2025.4.22
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    container_name: minio
+    hostname: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=_admin123
+    volumes:
+      - ./docker-data/storage/data:/data
+      - ./docker-data/storage/config:/root/.minio
+
+  manga_image_translator:
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/zyddnys/manga-image-translator:main
+    container_name: manga_image_translator_gpu
+    entrypoint: python
+    command: server/main.py --verbose --start-instance --host=0.0.0.0 --port=5003 --use-gpu
+    volumes:
+      - ./docker-data/mit/result:/app/result
+      - ./docker-data/mit/server/main.py:/app/server/main.py
+      - ./docker-data/mit/server/instance.py:/app/server/instance.py      
+    ports:
+      - 5003:5003
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu] 
+    environment:  
+      # sakura  
+      SAKURA_API_BASE: 'http://host.docker.internal:8080/v1'  
+      SAKURA_VERSION: '0.9'  
+      SAKURA_DICT_PATH: './sakura_dict.txt'        
