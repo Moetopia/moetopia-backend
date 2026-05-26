@@ -234,7 +234,7 @@ pixiv-agent/
 
 ## 📄 许可证
 
-本项目采用 [AGPL-3.0](LICENSE) 许可证。
+本项目采用 [Source Available License](LICENSE.md) 许可证。
 
 ---
 
