@@ -11,8 +11,6 @@
 ![Meilisearch](https://img.shields.io/badge/Search-Meilisearch-FF5CAA?logo=meilisearch&logoColor=white)
 ![Qdrant](https://img.shields.io/badge/Vector-Qdrant-FF3A3A)
 ![Redis](https://img.shields.io/badge/Queue-Redis-DC382D?logo=redis&logoColor=white)
-![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
-
 </div>
 
 ---
