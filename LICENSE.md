@@ -1,5 +1,6 @@
 # Source Available License
-## Version 1.0
+
+## Version 1.1
 
 **Copyright © misaka10843(Github @misaka10843) 2026. All Rights Reserved.**
 
@@ -59,7 +60,7 @@ The following are **strictly and unconditionally prohibited**, regardless of whe
 
    **Personal Self-Hosted Use Exception**: A Licensee may deploy the Software or a Modified Version on a private local or internal network for personal self-hosted use (for example, on a personal NAS, home server, or private local device — similar in nature to how self-hosted applications such as Immich are used), provided that **all** of the following conditions are met:
 
-   (a) The deployment is operated solely for the Licensee's own personal use, or for members of the Licensee's own household. Access must remain within the Licensee's private local network or intranet and must be technically prevented from being accessible to any party outside that network, whether by network configuration, firewall rules, or equivalent means;
+   (a) The deployment is operated solely for the Licensee's own personal use, or for members of the Licensee's own household. Regardless of the network access method used — including but not limited to local LAN, VPN (e.g., Tailscale, WireGuard), dynamic DNS (DDNS), or reverse proxy (e.g., Frp) — access must at all times be restricted exclusively to the Licensee and members of their household through authentication (e.g., password or token). The service must not be discoverable or accessible to the general public, and must not be listed, advertised, or shared with any party outside the household;
 
    (b) No fee, subscription, or any other form of monetary or non-monetary compensation is charged or collected in connection with the deployment or access to the Software;
 
@@ -97,9 +98,9 @@ The Licensor exclusively retains the following rights, unrestricted by any provi
 
 1. **Voluntary**: Contributions are entirely voluntary. The Licensor is under no obligation to accept, review, merge, or credit any Contribution.
 
-2. **Copyright Assignment**: By submitting a Contribution, the contributor irrevocably assigns to the Licensor all copyright and related intellectual property rights in the Contribution, worldwide, in perpetuity, without compensation. This assignment takes effect upon submission.
+2. **License Grant for Contributions**: By submitting a Contribution, the contributor irrevocably grants to the Licensor a worldwide, perpetual, royalty-free, non-exclusive, sublicensable license to use, reproduce, modify, distribute, and otherwise exploit the Contribution in any form and for any purpose, including incorporation into the Software. The contributor retains copyright ownership of their Contribution; this grant does not constitute a transfer of copyright.
 
-3. **Representations**: By submitting a Contribution, the contributor represents and warrants that: (a) the Contribution is the contributor's original work; (b) the contributor has the full right to assign the copyright; and (c) the Contribution does not infringe upon any third-party rights.
+3. **Representations**: By submitting a Contribution, the contributor represents and warrants that: (a) the Contribution is the contributor's original work; (b) the contributor has the full right to grant the license described in Section 5.2; and (c) the Contribution does not infringe upon any third-party rights.
 
 4. **No Rights Acquired**: Submitting a Contribution does not grant the contributor any additional rights under this License, nor any ownership or co-authorship interest in the Software.
 
@@ -141,18 +142,26 @@ TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE LICENSO
 
 ## Section 10 — Governing Law and Dispute Resolution
 
-This License shall be governed by and construed in accordance with the laws of **the People's Republic of China**, without regard to its conflict-of-law principles.
+1. **Governing Law**: This License shall be governed by and construed in accordance with the laws of the **People's Republic of China** (excluding the laws applicable in Hong Kong SAR, Macao SAR, and Taiwan), without regard to its conflict-of-law principles.
+
+2. **Amicable Resolution**: In the event of a dispute, the parties shall first attempt to resolve it through good-faith negotiation within thirty (30) days of the dispute arising.
+
+3. **Jurisdiction**: If negotiation fails, either party may submit the dispute to the **Intellectual Property Court or Intermediate People's Court with jurisdiction over the Licensor's place of domicile**. Where a dedicated Intellectual Property Court exists at the Licensor's domicile (e.g., the Beijing, Shanghai, or Guangzhou Intellectual Property Court), that court shall have priority jurisdiction.
+
+4. **Language**: The Chinese version of this License is authoritative. In the event of any conflict between the Chinese version and any translation, the Chinese version shall prevail.
 
 ---
 
-## Section 11 — Entire Agreement
+## Section 11 — Entire Agreement and Severability
 
-This License constitutes the entire agreement between the Licensor and the Licensee with respect to the Software and supersedes all prior or contemporaneous oral or written understandings on the subject matter. Any rights not expressly granted herein are reserved by the Licensor.
+1. **Entire Agreement**: This License constitutes the entire agreement between the Licensor and the Licensee with respect to the Software and supersedes all prior or contemporaneous oral or written understandings on the subject matter. Any rights not expressly granted herein are reserved by the Licensor.
 
----
-
-> **Notice**: This is a **Source Available License**, not an Open Source License as defined by the Open Source Initiative (OSI). The Software is not "free software" or "open-source software". For inquiries regarding Production Use or Commercial Use authorization (Additional Use Grant), please contact the Licensor directly.
+2. **Severability**: If any provision of this License is held invalid or unenforceable by a court of competent jurisdiction, that provision shall be modified to the minimum extent necessary to make it enforceable, or severed; all remaining provisions shall continue in full force and effect.
 
 ---
 
-*This License draws structural inspiration from the Business Source License 1.1 (BUSL-1.1) but differs in key respects: no Change Date, no Change License, and no automatic conversion to any open-source license. In the event of any conflict between this document and any other description of the License, this document controls.*
+> **Notice**: This is a **Source Available License**, not an Open Source License as defined by the Open Source Initiative (OSI). The Software is not "free software" or "open-source software". Because this is a fully custom license, automated license detection tools (such as GitHub's `licensee`) will not recognize it as a known SPDX identifier; the repository will display "View license" rather than a named license badge — this is expected and correct behavior. For inquiries regarding Production Use or Commercial Use authorization (Additional Use Grant), please contact the Licensor directly.
+
+---
+
+_This License draws structural inspiration from the Business Source License 1.1 (BUSL-1.1) but differs in key respects: no Change Date, no Change License, and no automatic conversion to any open-source license. In the event of any conflict between this document and any other description of the License, this document controls._
