@@ -245,3 +245,5 @@ docker-data/
 logs/
 
 scripts/rec_test_output
+
+migrations/
