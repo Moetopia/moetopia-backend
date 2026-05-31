@@ -9,7 +9,8 @@ from app.core.logging import setup_logging
 from app.core.exceptions import register_exception_handlers
 from app.infrastructure.meilisearch_client import meili_client
 from app.infrastructure.redis_client import init_redis, close_redis
-from app.api.v1 import artworks, auth, users, interactions, search, tags, creators, ws, notifications, reports, admin, messages, announcements, payments, moderation, captcha, membership, translations, account_claims, pixiv_sync
+from app.api.v1 import artworks, auth, users, interactions, search, tags, creators, ws, notifications, reports, admin, \
+    messages, announcements, payments, moderation, captcha, membership, translations, account_claims, pixiv_sync
 from app.services.storage_service import storage, LocalStorageBackend
 
 import logging
@@ -126,27 +127,26 @@ async def health_check():
 
 
 # 挂载路由，指定前缀和 Swagger 标签
-app.include_router(auth.router,          prefix=f"{settings.API_V1_STR}/auth",          tags=["安全认证"])
-app.include_router(users.router,         prefix=f"{settings.API_V1_STR}/users",         tags=["用户管理"])
-app.include_router(artworks.router,      prefix=f"{settings.API_V1_STR}/artworks",      tags=["作品与投稿"])
-app.include_router(search.router,        prefix=f"{settings.API_V1_STR}/search",        tags=["检索引擎"])
-app.include_router(tags.router,          prefix=f"{settings.API_V1_STR}/tags",          tags=["AI基准库"])
-app.include_router(interactions.router,  prefix=f"{settings.API_V1_STR}/interactions",  tags=["社交互动"])
-app.include_router(creators.router,      prefix=f"{settings.API_V1_STR}/creators",      tags=["创作者管理"])
+app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["安全认证"])
+app.include_router(users.router, prefix=f"{settings.API_V1_STR}/users", tags=["用户管理"])
+app.include_router(artworks.router, prefix=f"{settings.API_V1_STR}/artworks", tags=["作品与投稿"])
+app.include_router(search.router, prefix=f"{settings.API_V1_STR}/search", tags=["检索引擎"])
+app.include_router(tags.router, prefix=f"{settings.API_V1_STR}/tags", tags=["AI基准库"])
+app.include_router(interactions.router, prefix=f"{settings.API_V1_STR}/interactions", tags=["社交互动"])
+app.include_router(creators.router, prefix=f"{settings.API_V1_STR}/creators", tags=["创作者管理"])
 app.include_router(notifications.router, prefix=f"{settings.API_V1_STR}/notifications", tags=["通知中心"])
-app.include_router(reports.router,       prefix=f"{settings.API_V1_STR}/reports",       tags=["内容举报"])
-app.include_router(admin.router,         prefix=f"{settings.API_V1_STR}/admin",         tags=["后台管理"])
-app.include_router(messages.router,      prefix=f"{settings.API_V1_STR}/messages",      tags=["私信聊天"])
+app.include_router(reports.router, prefix=f"{settings.API_V1_STR}/reports", tags=["内容举报"])
+app.include_router(admin.router, prefix=f"{settings.API_V1_STR}/admin", tags=["后台管理"])
+app.include_router(messages.router, prefix=f"{settings.API_V1_STR}/messages", tags=["私信聊天"])
 app.include_router(announcements.router, prefix=f"{settings.API_V1_STR}/announcements", tags=["公告中心"])
-app.include_router(payments.router,      prefix=f"{settings.API_V1_STR}/payments",         tags=["支付网关"])
-app.include_router(moderation.router,    prefix=f"{settings.API_V1_STR}/admin/moderation",  tags=["内容审核"])
-app.include_router(captcha.router,       prefix=f"{settings.API_V1_STR}/captcha",            tags=["安全验证码"])
-app.include_router(membership.router,    prefix=f"{settings.API_V1_STR}/membership",         tags=["会员体系"])
-app.include_router(translations.router,  prefix=f"{settings.API_V1_STR}/artworks",           tags=["漫画翻译"])
-app.include_router(account_claims.router, prefix=f"{settings.API_V1_STR}/account-claims",  tags=["账号认领"])
-app.include_router(pixiv_sync.router,    prefix=settings.API_V1_STR,                        tags=["Pixiv同步"])
-app.include_router(ws.router,            prefix=settings.API_V1_STR,                        tags=["实时通信"])
-
+app.include_router(payments.router, prefix=f"{settings.API_V1_STR}/payments", tags=["支付网关"])
+app.include_router(moderation.router, prefix=f"{settings.API_V1_STR}/admin/moderation", tags=["内容审核"])
+app.include_router(captcha.router, prefix=f"{settings.API_V1_STR}/captcha", tags=["安全验证码"])
+app.include_router(membership.router, prefix=f"{settings.API_V1_STR}/membership", tags=["会员体系"])
+app.include_router(translations.router, prefix=f"{settings.API_V1_STR}/artworks", tags=["漫画翻译"])
+app.include_router(account_claims.router, prefix=f"{settings.API_V1_STR}/account-claims", tags=["账号认领"])
+app.include_router(pixiv_sync.router, prefix=settings.API_V1_STR, tags=["Pixiv同步"])
+app.include_router(ws.router, prefix=settings.API_V1_STR, tags=["实时通信"])
 
 # 挂载 PostgreSQL（Tortoise ORM）
 register_tortoise(
@@ -159,4 +159,5 @@ register_tortoise(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, reload_excludes=["docker-data/*", "logs/*"])

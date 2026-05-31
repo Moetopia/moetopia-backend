@@ -1,74 +1,110 @@
 version: '3.8'
 
+# 定义统一的自定义桥接网络
+networks:
+  moetopia_network:
+    driver: bridge
+
 services:
   # 1. 关系型数据库：存储元数据
   postgres:
     image: postgres:18
-    container_name: sakurakoi_postgres
+    container_name: moetopia_postgres
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: sakurakoi
+      POSTGRES_USER: moetopia
+      POSTGRES_PASSWORD: moetopia
+      POSTGRES_DB: moetopia
     ports:
       - "5432:5432"
     volumes:
       - ./docker-data/postgres:/var/lib/postgresql
+    networks:
+      - moetopia_network
     restart: always
 
-  # 2. 文本搜素引擎：处理标签和标题搜索
+  # 2. 文本搜索引擎：处理标签和标题搜索
   meilisearch:
     image: getmeili/meilisearch:v1.42.1
-    container_name: sakurakoi_meili
+    container_name: moetopia_meili
     environment:
-      - MEILI_MASTER_KEY=masterKey_123456
+      - MEILI_MASTER_KEY=moetopia
     ports:
       - "7700:7700"
     volumes:
       - ./docker-data/meili:/meili_data
+    networks:
+      - moetopia_network
     restart: always
 
   # 3. 向量数据库：处理 9083 维特征
   qdrant:
     image: qdrant/qdrant:v1.17.0
-    container_name: sakurakoi_qdrant
+    container_name: moetopia_qdrant
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
       - ./docker-data/qdrant:/qdrant/storage
+    networks:
+      - moetopia_network
     restart: always
 
   # 4. Redis：任务队列中间件，用于数据库同步
   redis:
     image: redis:7-alpine
-    container_name: sakurakoi_redis
+    container_name: moetopia_redis
     ports:
       - "6379:6379"
+    networks:
+      - moetopia_network
 
-  minio:
-    image: bitnami/minio:2025.4.22
-    restart: always
+  # 5. Garage S3 存储服务
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: garage
+    restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
-    container_name: minio
-    hostname: minio
-    environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=_admin123
+      - "3900:3900"   # S3 API
+      - "3901:3901"   # RPC
+      - "3902:3902"   # S3 Web
+      - "3903:3903"   # Admin API & Prometheus Metrics
     volumes:
-      - ./docker-data/storage/data:/data
-      - ./docker-data/storage/config:/root/.minio
+      # 请确保此处的映射路径和文件名正确
+      - ./docker-data/garage/garage.toml:/etc/garage.toml
+      - ./docker-data/garage/meta:/var/lib/garage/meta
+      - ./docker-data/garage/data:/var/lib/garage/data
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - moetopia_network
 
+  # 6. Garage WebUI 管理界面
+  webui:
+    image: khairul169/garage-webui:latest
+    container_name: garage-webui
+    restart: unless-stopped
+    ports:
+      - "3909:3909"
+    volumes:
+      - ./docker-data/garage/garage.toml:/etc/garage.toml:ro
+    environment:
+      # 使用服务名进行容器间通信（Docker 内部 DNS 解析）
+      - API_BASE_URL=http://garage:3903
+      - S3_ENDPOINT_URL=http://garage:3900
+    networks:
+      - moetopia_network
+    # 确保 garage 启动后再启动 webui
+    depends_on:
+      - garage
+
+  # 7. 漫画图像翻译服务
   manga_image_translator:
-    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/zyddnys/manga-image-translator:main
+    image: swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/misaka10843/manga-image-translator:main
     container_name: manga_image_translator_gpu
     entrypoint: python
     command: server/main.py --verbose --start-instance --host=0.0.0.0 --port=5003 --use-gpu
     volumes:
       - ./docker-data/mit/result:/app/result
-      - ./docker-data/mit/server/main.py:/app/server/main.py
-      - ./docker-data/mit/server/instance.py:/app/server/instance.py      
     ports:
       - 5003:5003
     ipc: host
@@ -76,9 +112,11 @@ services:
       resources:
         reservations:
           devices:
-            - capabilities: [gpu] 
-    environment:  
-      # sakura  
-      SAKURA_API_BASE: 'http://host.docker.internal:8080/v1'  
-      SAKURA_VERSION: '0.9'  
-      SAKURA_DICT_PATH: './sakura_dict.txt'        
+            - capabilities: [gpu]
+    environment:
+      # 允许 GPU 容器通过网络或 host 访问外部主机接口
+      - SAKURA_API_BASE=http://host.docker.internal:8080/v1
+      - SAKURA_VERSION=0.9
+      - SAKURA_DICT_PATH=./sakura_dict.txt
+    networks:
+      - moetopia_network

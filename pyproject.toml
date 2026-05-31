@@ -2,3 +2,11 @@
 tortoise_orm = "app.core.database.TORTOISE_ORM"
 location = "./migrations"
 src_folder = "./."
+
+[tool.watchfiles]
+extend_filters = [
+    "docker-data",
+    ".venv",
+    ".git",
+    "logs"
+]
