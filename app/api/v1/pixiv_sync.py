@@ -99,8 +99,15 @@ async def node_status(node_id: int, current_user: User = Depends(_STAFF)):
                 headers=_node_headers(node),
             )
             resp.raise_for_status()
+            
+            node.status = "online"
+            node.last_ping = _now()
+            await node.save(update_fields=["status", "last_ping"])
+            
             return ResponseBase(data=resp.json())
     except Exception as e:
+        node.status = "offline"
+        await node.save(update_fields=["status"])
         raise HTTPException(status_code=502, detail=f"节点请求失败: {e}")
 
 
@@ -226,6 +233,23 @@ async def reassign_author(
         if nid:
             count = await PixivSyncAuthor.filter(assigned_node_id=nid).count()
             await PixivSyncNode.filter(id=nid).update(author_count=count)
+            
+    import httpx
+    import logging
+    from app.services.pixiv_sync_service import _node_headers
+    logger = logging.getLogger(__name__)
+    
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{node.url}/sync/author/{author.pixiv_user_id}",
+                headers=_node_headers(node),
+            )
+            if resp.status_code != 200:
+                logger.error(f"[PixivSync] 节点 {node.name} 接收重新分配作者失败: {resp.status_code}")
+    except Exception as e:
+        logger.error(f"[PixivSync] 通知重新分配作者到节点 {node.name} 出错: {e}")
+        
     return ResponseBase(data={"pixiv_user_id": pixiv_user_id, "assigned_node_id": node_id})
 
 

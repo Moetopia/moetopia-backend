@@ -50,6 +50,7 @@ class UserResponse(BaseModel):
 
     followers_count: int = 0
     following_count: int = 0
+    artwork_count: int = 0
     has_membership: bool = False
     is_imported: bool = False
     pixiv_user_id: Optional[int] = None
@@ -85,6 +86,7 @@ class UserPublicResponse(BaseModel):
 
     followers_count: int = 0
     following_count: int = 0
+    artwork_count: int = 0
     is_blocked_by: bool = False
     has_membership: bool = False
     is_imported: bool = False

@@ -43,6 +43,8 @@ async def get_current_user_profile(current_user: User = Depends(get_current_user
     resp = UserResponse.model_validate(current_user)
     resp.followers_count = followers_count
     resp.following_count = following_count
+    from app.models.artwork import Artwork
+    resp.artwork_count = await Artwork.filter(author_id=current_user.id).count()
     from app.models.user_membership import UserMembership
     resp.has_membership = await UserMembership.filter(
         user_id=current_user.id, status="active", expires_at__gte=datetime.now(timezone.utc)
@@ -183,6 +185,16 @@ async def get_user_profile(
     resp = UserPublicResponse.model_validate(user)
     resp.followers_count = followers_count
     resp.following_count = following_count
+    
+    # 获取作品数（根据权限过滤可见性）
+    from app.models.artwork import Artwork
+    if current_user and current_user.id == user.id:
+        resp.artwork_count = await Artwork.filter(author_id=user.id).count()
+    elif current_user and await Follow.filter(follower_id=current_user.id, followed_id=user.id).exists():
+        resp.artwork_count = await Artwork.filter(author_id=user.id, visibility__in=["public", "followers"]).count()
+    else:
+        resp.artwork_count = await Artwork.filter(author_id=user.id, visibility="public").count()
+
     # 被目标拉黑时：返回基本信息 + is_blocked_by=True，而非 403（避免用户误以为网站故障）
     if current_user and await UserBlock.exists(blocker_id=user_id, blocked_id=current_user.id):
         resp.is_blocked_by = True

@@ -249,6 +249,64 @@ async def toggle_commission_status(
     return ResponseBase(data={"id": user_id, "commission_enabled": user.commission_enabled})
 
 
+@router.post("/users/{user_id}/impersonate", response_model=ResponseBase[dict])
+async def impersonate_user(
+    user_id: int,
+    current_user: User = Depends(_ADMIN),
+):
+    """【管理员】临时登录为该用户（签发该用户的 JWT Token）"""
+    from app.core.security import create_access_token
+    from app.core.config import settings
+    from datetime import timedelta
+    
+    target_user = await User.get_or_none(id=user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(target_user.id), "token_version": target_user.token_version},
+        expires_delta=access_token_expires
+    )
+    
+    return ResponseBase(data={
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": target_user.id,
+        "username": target_user.username,
+        "role": target_user.role,
+    })
+
+
+@router.post("/pixiv-users/{pixiv_user_id}/impersonate", response_model=ResponseBase[dict])
+async def impersonate_pixiv_user(
+    pixiv_user_id: int,
+    current_user: User = Depends(_ADMIN),
+):
+    """【管理员】通过 pixiv_user_id 临时登录为该导入用户"""
+    from app.core.security import create_access_token
+    from app.core.config import settings
+    from datetime import timedelta
+    
+    target_user = await User.get_or_none(pixiv_user_id=pixiv_user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="该 Pixiv 作者对应的账号不存在，可能尚未导入任何作品")
+        
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(target_user.id), "token_version": target_user.token_version},
+        expires_delta=access_token_expires
+    )
+    
+    return ResponseBase(data={
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_id": target_user.id,
+        "username": target_user.username,
+        "role": target_user.role,
+    })
+
+
 # ──────────────────────────────────────────────────────────────────────
 # 作品管理（全量，含私密）
 # ──────────────────────────────────────────────────────────────────────
@@ -332,6 +390,35 @@ async def admin_set_artwork_visibility(
     artwork.visibility = body.visibility
     await artwork.save(update_fields=["visibility"])
     return ResponseBase(data={"id": artwork_id, "visibility": artwork.visibility})
+
+
+@router.post("/artworks/ai-retag-missing", response_model=ResponseBase[dict])
+async def trigger_ai_retag_for_missing(current_user: User = Depends(_STAFF)):
+    """触发缺失 AI 标签作品的重新打标任务"""
+    from app.models.artwork import Artwork
+    from app.models.tag import ArtworkTag
+    from app.worker.enqueue import enqueue
+
+    artworks = await Artwork.filter(allow_ai_tagging=True).values_list("id", flat=True)
+    
+    tagged_artworks = set(await ArtworkTag.filter(
+        type__in=["ai_unverified", "ai_verified"]
+    ).values_list("artwork_id", flat=True))
+
+    missing_ids = [aid for aid in artworks if aid not in tagged_artworks]
+
+    enqueued = 0
+    for aid in missing_ids:
+        try:
+            await enqueue("task_ai_tag_artwork", artwork_id=aid)
+            enqueued += 1
+        except Exception:
+            pass
+
+    return ResponseBase(data={
+        "message": f"Successfully triggered retagging for {enqueued} artworks.",
+        "enqueued_count": enqueued
+    })
 
 
 # ──────────────────────────────────────────────────────────────────────

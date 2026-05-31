@@ -15,15 +15,15 @@ meilisearch>=0.41.0
 qdrant-client>=1.18.0
 
 # Auth
-bcrypt
+bcrypt>=4.1.0
 PyJWT>=2.8.0
 
 # File upload & image processing
 python-multipart>=0.0.9
 Pillow>=10.0.0
 
-# AI engine (WD14 tagging)
-onnxruntime>=1.26.0
+# AI engine (WD14 tagging) - GPU Enhanced
+onnxruntime-gpu>=1.26.0
 huggingface-hub>=0.20.0
 numpy>=1.24.0
 

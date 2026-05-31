@@ -49,41 +49,44 @@ async def ping_node(node: PixivSyncNode) -> bool:
         stats = health_data.get("stats", {})
         queue = health_data.get("queue", {})
         cooldown = queue.get("cooldown", {})
-        # 把节点快照写入 note 字段（JSON），供管理页面展示
-        import json as _json
-        node.note = _json.dumps({
-            "stats": stats,
-            "cooldown": cooldown,
-            "recent_logs": health_data.get("recent_logs", [])[-10:],
-            "ts": health_data.get("ts"),
-        }, ensure_ascii=False)
 
-    await node.save(update_fields=["last_ping", "status", "note"])
+    await node.save(update_fields=["last_ping", "status"])
     return online
 
 
 async def assign_authors() -> int:
     """将未分配的作者按节点负载分配（取 author_count 最少的 online 节点）。返回分配数量。"""
+    # 1. 查出所有未分配的作者并进行初次分配
     unassigned = await PixivSyncAuthor.filter(
         assigned_node=None, sync_enabled=True
     ).order_by("created_at")
-    if not unassigned:
-        return 0
 
     online_nodes = await PixivSyncNode.filter(status="online").order_by("author_count")
     if not online_nodes:
-        logger.warning("[PixivSync] 无可用节点，无法分配作者")
+        logger.warning("[PixivSync] 无可用节点，无法分配/下发作者")
         return 0
 
     assigned_count = 0
     node_idx = 0
 
-    for author in unassigned:
-        node = online_nodes[node_idx % len(online_nodes)]
-        author.assigned_node_id = node.id
-        author.status = "pending"
-        await author.save(update_fields=["assigned_node_id", "status"])
-
+    if unassigned:
+        for author in unassigned:
+            node = online_nodes[node_idx % len(online_nodes)]
+            author.assigned_node_id = node.id
+            author.status = "pending"
+            await author.save(update_fields=["assigned_node_id", "status"])
+            node_idx += 1
+            
+    # 2. 查出所有已分配且启用同步的作者（包括刚刚分配的），并向下发分发任务
+    assigned_authors = await PixivSyncAuthor.filter(
+        assigned_node_id__isnull=False, sync_enabled=True
+    ).prefetch_related("assigned_node")
+    
+    for author in assigned_authors:
+        node = author.assigned_node
+        if not node or node.status != "online":
+            continue
+            
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
@@ -91,14 +94,12 @@ async def assign_authors() -> int:
                     headers=_node_headers(node),
                 )
                 if resp.status_code == 200:
-                    logger.info(f"[PixivSync] 作者 {author.pixiv_user_id} → 节点 {node.name}")
+                    logger.info(f"[PixivSync] 下发同步任务: 作者 {author.pixiv_user_id} → 节点 {node.name}")
                     assigned_count += 1
                 else:
-                    logger.error(f"[PixivSync] 节点 {node.name} 接收作者失败: {resp.status_code}")
+                    logger.warning(f"[PixivSync] 节点 {node.name} 接收作者失败: {resp.status_code}")
         except Exception as e:
-            logger.error(f"[PixivSync] 分配作者到节点 {node.name} 出错: {e}")
-
-        node_idx += 1
+            logger.error(f"[PixivSync] 下发作者到节点 {node.name} 出错: {e}")
 
     await _refresh_node_author_counts()
     return assigned_count
@@ -130,22 +131,32 @@ async def reassign_offline_node_authors() -> int:
 
 async def poll_and_import(since_minutes: int = 15) -> dict:
     """
-    轮询所有 online 节点，拉取最近 since_minutes 分钟内新增的作品，
+    轮询所有 online 节点，拉取新增的作品，
     写入 PixivArtworkCache，并导入到主库。
     """
     online_nodes = await PixivSyncNode.filter(status="online")
     if not online_nodes:
         return {"nodes_polled": 0, "cached": 0, "imported": 0}
 
-    since = (datetime.now(timezone.utc) - timedelta(minutes=since_minutes)).isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc)
+    fallback_since = (now - timedelta(minutes=since_minutes)).isoformat(timespec="seconds")
     total_cached = 0
     total_imported = 0
 
     for node in online_nodes:
         try:
-            cached, imported = await _poll_node(node, since)
+            poll_start_time = datetime.now(timezone.utc)
+            if node.last_polled_at:
+                node_since = node.last_polled_at.isoformat(timespec="seconds")
+            else:
+                node_since = fallback_since
+                
+            cached, imported = await _poll_node(node, node_since)
             total_cached += cached
             total_imported += imported
+            
+            node.last_polled_at = poll_start_time
+            await node.save(update_fields=["last_polled_at"])
         except Exception as e:
             logger.error(f"[PixivSync] 轮询节点 {node.name} 出错: {e}", exc_info=True)
 
@@ -162,14 +173,59 @@ async def _poll_node(node: PixivSyncNode, since: str) -> tuple[int, int]:
     imported = 0
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=_node_headers(node)) as client:
-        resp = await client.get(
-            f"{node.url}/artworks",
-            params={"since": since, "limit": 200},
-        )
-        resp.raise_for_status()
-        artworks_data = resp.json()
+        try:
+            authors_resp = await client.get(f"{node.url}/sync/authors")
+            if authors_resp.status_code == 200:
+                for ad in authors_resp.json():
+                    author = await PixivSyncAuthor.get_or_none(pixiv_user_id=ad["pixiv_user_id"], assigned_node_id=node.id)
+                    if author:
+                        agent_status = ad.get("status")
+                        if agent_status == "done":
+                            b_status = "done"
+                        elif agent_status == "failed":
+                            b_status = "error"
+                        else:
+                            b_status = "syncing"
+                        
+                        updates = {"status": b_status}
+                        if ad.get("last_synced_at"):
+                            try:
+                                updates["last_sync_at"] = datetime.fromisoformat(ad["last_synced_at"]).replace(tzinfo=timezone.utc)
+                            except ValueError:
+                                pass
+                        if ad.get("artwork_count") is not None:
+                            updates["artwork_count"] = ad["artwork_count"]
+                        
+                        changed = False
+                        for k, v in updates.items():
+                            if getattr(author, k) != v:
+                                setattr(author, k, v)
+                                changed = True
+                        if changed:
+                            await author.save(update_fields=list(updates.keys()))
+        except Exception as e:
+            logger.warning(f"[PixivSync] 获取节点 {node.name} 的作者状态失败: {e}")
 
-        for aw in artworks_data:
+        limit = 200
+        offset = 0
+        all_artworks = []
+        while True:
+            resp = await client.get(
+                f"{node.url}/artworks",
+                params={"since": since, "limit": limit, "offset": offset},
+            )
+            resp.raise_for_status()
+            artworks_data = resp.json()
+            if not artworks_data:
+                break
+            
+            all_artworks.extend(artworks_data)
+            
+            if len(artworks_data) < limit:
+                break
+            offset += limit
+
+        for aw in all_artworks:
             pixiv_id = aw.get("pixiv_id")
             if not pixiv_id:
                 continue
@@ -217,13 +273,32 @@ async def import_single_artwork(cache: PixivArtworkCache, node: PixivSyncNode) -
         await cache.save(update_fields=["imported", "moetopia_artwork_id", "updated_at"])
         return True
 
-    author_user = await _get_or_create_imported_user(meta, pixiv_user_id)
+    author_user = await _get_or_create_imported_user(meta, pixiv_user_id, node)
     if not author_user:
         logger.error(f"[PixivSync] 无法创建/获取作者账号 pixiv_user_id={pixiv_user_id}")
         return False
 
     images_data = meta.get("images", [])
-    image_urls: list[str] = []
+    
+    if not images_data:
+        logger.warning(f"[PixivSync] 作品 {pixiv_id} 无图片信息，跳过")
+        return False
+        
+    all_downloaded = all(img.get("downloaded") for img in images_data)
+    if not all_downloaded:
+        logger.debug(f"[PixivSync] 作品 {pixiv_id} 尚有未下载完成的图片，暂不导入")
+        return False
+
+    image_records: list[dict] = []
+
+    def _measure_dimensions(raw: bytes):
+        try:
+            from PIL import Image as PILImage
+            with io.BytesIO(raw) as b:
+                with PILImage.open(b) as img:
+                    return img.width, img.height
+        except Exception:
+            return None, None
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         for idx, img in enumerate(images_data):
@@ -241,12 +316,30 @@ async def import_single_artwork(cache: PixivArtworkCache, node: PixivSyncNode) -
                 content_type = resp.headers.get("content-type", "image/jpeg")
                 ext = _ext_from_content_type(content_type)
                 filename = f"pixiv_{pixiv_id}_p{idx}{ext}"
-                url = await storage.save(data, f"artworks/{filename}")
-                image_urls.append(url)
+                
+                from app.services.artwork_service import _compress_to_max
+                import asyncio
+                
+                compressed, c_w, c_h = await asyncio.to_thread(_compress_to_max, data)
+                if compressed is not None:
+                    original_url = await storage.save(data, f"artworks/pixiv_{pixiv_id}_p{idx}_orig{ext}")
+                    file_url = await storage.save(compressed, f"artworks/{filename}")
+                    width, height = c_w, c_h
+                else:
+                    file_url = await storage.save(data, f"artworks/{filename}")
+                    original_url = None
+                    width, height = await asyncio.to_thread(_measure_dimensions, data)
+                
+                image_records.append({
+                    "file_url": file_url,
+                    "original_url": original_url,
+                    "width": width,
+                    "height": height,
+                })
             except Exception as e:
                 logger.error(f"[PixivSync] 下载/上传图片 {pixiv_id}[{idx}] 失败: {e}")
 
-    if not image_urls:
+    if not image_records:
         logger.warning(f"[PixivSync] 作品 {pixiv_id} 无可用图片，跳过导入")
         return False
 
@@ -274,10 +367,45 @@ async def import_single_artwork(cache: PixivArtworkCache, node: PixivSyncNode) -
             if tag_name:
                 await ArtworkTag.get_or_create(artwork_id=artwork.id, tag_name=tag_name)
 
-        for idx, url in enumerate(image_urls):
+        create_date = meta.get("create_date")
+        if create_date:
+            try:
+                dt = datetime.fromisoformat(create_date)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                await artwork.update_from_dict({"created_at": dt}).save(update_fields=["created_at"])
+            except Exception as e:
+                logger.warning(f"解析 create_date 失败: {e}")
+
+        series_json = meta.get("series_json")
+        if series_json:
+            try:
+                series_data = json.loads(series_json)
+                if isinstance(series_data, dict) and series_data.get("id"):
+                    from app.models.artwork import ArtworkSeries, ArtworkSeriesItem
+                    series, _ = await ArtworkSeries.get_or_create(
+                        id=series_data["id"],
+                        defaults={
+                            "author_id": author_user.id,
+                            "title": series_data.get("title") or "",
+                            "description": None,
+                        }
+                    )
+                    await ArtworkSeriesItem.create(
+                        series_id=series.id,
+                        artwork_id=artwork.id,
+                        order=series_data.get("order", 0)
+                    )
+            except Exception as e:
+                logger.error(f"处理系列信息失败: {e}")
+
+        for idx, rec in enumerate(image_records):
             await ArtworkImage.create(
                 artwork_id=artwork.id,
-                file_url=url,
+                file_url=rec["file_url"],
+                original_url=rec["original_url"],
+                width=rec["width"],
+                height=rec["height"],
                 sort_order=idx,
             )
 
@@ -286,6 +414,12 @@ async def import_single_artwork(cache: PixivArtworkCache, node: PixivSyncNode) -
             await sync_artwork_to_meili(artwork, all_tags=tags)
         except Exception:
             pass
+
+        try:
+            from app.worker.enqueue import enqueue
+            await enqueue("task_ai_tag_artwork", artwork_id=artwork.id)
+        except Exception as e:
+            logger.error(f"[PixivSync] 触发 AI 标签与 Qdrant 入库失败 artwork_id={artwork.id}: {e}")
 
         cache.imported = True
         cache.moetopia_artwork_id = artwork.id
@@ -329,10 +463,32 @@ async def import_all_cached() -> dict:
     return {"total": len(pending), "imported": imported, "failed": failed}
 
 
-async def _get_or_create_imported_user(meta: dict, pixiv_user_id: int) -> Optional[User]:
+async def _sync_author_avatar(user: User, pixiv_user_id: int, node: PixivSyncNode):
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{node.url}/authors/{pixiv_user_id}/avatar",
+                headers=_node_headers(node),
+            )
+            if resp.status_code == 200:
+                data = resp.content
+                content_type = resp.headers.get("content-type", "image/jpeg")
+                ext = _ext_from_content_type(content_type)
+                filename = f"avatar_pixiv_{pixiv_user_id}{ext}"
+                url = await storage.save(data, f"avatars/{filename}")
+                user.avatar_url = url
+                await user.save(update_fields=["avatar_url"])
+                logger.info(f"[PixivSync] 作者 {pixiv_user_id} 头像下载成功")
+    except Exception as e:
+        logger.warning(f"[PixivSync] 下载/上传作者 {pixiv_user_id} 头像失败: {e}")
+
+
+async def _get_or_create_imported_user(meta: dict, pixiv_user_id: int, node: Optional[PixivSyncNode] = None) -> Optional[User]:
     """获取或创建 Pixiv 作者对应的导入账号。"""
     existing = await User.get_or_none(pixiv_user_id=pixiv_user_id)
     if existing:
+        if node and not existing.avatar_url:
+            await _sync_author_avatar(existing, pixiv_user_id, node)
         return existing
 
     # author_username 来自节点 /artworks/{id} 的 LEFT JOIN authors
@@ -357,6 +513,8 @@ async def _get_or_create_imported_user(meta: dict, pixiv_user_id: int) -> Option
             commission_enabled=False,
             token_version=0,
         )
+        if node:
+            await _sync_author_avatar(user, pixiv_user_id, node)
         return user
     except Exception as e:
         logger.error(f"[PixivSync] 创建导入用户 pixiv_user_id={pixiv_user_id} 失败: {e}")

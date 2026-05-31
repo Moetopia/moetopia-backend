@@ -15,6 +15,7 @@ class PixivSyncNode(models.Model):
     api_key = fields.CharField(max_length=256)
     status = fields.CharField(max_length=20, default="online")  # online | offline | banned
     last_ping = fields.DatetimeField(null=True)
+    last_polled_at = fields.DatetimeField(null=True)
     author_count = fields.IntField(default=0)
     note = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

@@ -51,15 +51,37 @@ class StorageBackend(ABC):
         """
         异步上下文管理器：生成一个适合 CPU 密集型处理（AI 推理）的本地文件路径。
         对于 S3 后端会自动下载到临时文件并在退出时清理。
+        如果无法解析路径，则尝试直接使用 HTTP 协议下载。
         """
         local = self._to_local_path(url)
-        if local is not None:
+        if local is not None and os.path.exists(local):
             yield local
-        else:
+            return
+
+        tmp = None
+        try:
             tmp = await self._download_to_temp(url)
-            try:
-                yield tmp
-            finally:
+        except Exception as e:
+            logger.warning(f"StorageBackend 原生下载失败 {url}: {e}，尝试 HTTP Fallback 下载")
+            if url.startswith("http://") or url.startswith("https://"):
+                import httpx
+                ext = os.path.splitext(url)[1] or ".tmp"
+                fd, tmp_path = tempfile.mkstemp(suffix=ext)
+                os.close(fd)
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    import aiofiles
+                    async with aiofiles.open(tmp_path, "wb") as f:
+                        await f.write(resp.content)
+                tmp = tmp_path
+            else:
+                raise e
+
+        try:
+            yield tmp
+        finally:
+            if tmp and os.path.exists(tmp):
                 try:
                     await asyncio.to_thread(os.unlink, tmp)
                 except Exception:
@@ -87,13 +109,10 @@ class LocalStorageBackend(StorageBackend):
     async def save(self, data: bytes, key: str) -> str:
         full = os.path.join("uploads", key)
         os.makedirs(os.path.dirname(full), exist_ok=True)
-        await asyncio.to_thread(self._sync_write, full, data)
+        import aiofiles
+        async with aiofiles.open(full, "wb") as f:
+            await f.write(data)
         return f"/uploads/{key}"
-
-    @staticmethod
-    def _sync_write(path: str, data: bytes) -> None:
-        with open(path, "wb") as f:
-            f.write(data)
 
     async def delete_by_url(self, url: str) -> None:
         local = self._to_local_path(url)

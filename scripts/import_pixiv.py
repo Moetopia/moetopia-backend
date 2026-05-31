@@ -521,7 +521,7 @@ def _download_pixiv_image(url: str, pixiv_api=None) -> Optional[bytes]:
     try:
         if pixiv_api is not None:
             # 使用 pixivpy3 认证 session（含 Authorization + User-Agent 等头）
-            r = pixiv_api.session.get(
+            r = pixiv_api.requests.get(
                 url,
                 headers={"Referer": "https://www.pixiv.net/"},
                 timeout=15,
